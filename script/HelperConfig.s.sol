@@ -1,0 +1,94 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.19;
+
+import {Script} from "forge-std/Script.sol";
+import {VRFCoordinatorV2_5Mock} from "@chainlink/contracts/src/v0.8/vrf/mocks/VRFCoordinatorV2_5Mock.sol";
+import {LinkToken} from "../test/mocks/LinkToken.sol";
+
+abstract contract CodeConstants {
+    uint96 public constant BASE_FEE = 0.25 ether;
+    uint96 public constant GAS_PRICE = 1e9;
+    int256 public constant WEI_PER_UNIT_LINK = 4e15;
+
+    uint256 public constant SEPOLIA_CHAIN_ID = 11155111;
+    uint256 public constant LOCAL_CHAIN_ID = 31337;
+}
+
+contract HelperConfig is Script, CodeConstants {
+    error HelperConfig__InvalidNetwork();
+
+    struct NetworkConfig {
+        uint256 entranceFee;
+        uint256 interval;
+        address vrfCoordinator;
+        bytes32 keyHash;
+        uint256 subscriptionId;
+        uint32 callbackGasLimit;
+        address link;
+        address account;
+    }
+    NetworkConfig public localNetworkConfig;
+    mapping(uint256 => NetworkConfig) public networkConfig;
+
+    constructor() {
+        networkConfig[11155111] = getSepoliaNetworkConfig();
+    }
+
+    function getConfigByChainId() public returns (NetworkConfig memory) {
+        if (block.chainid == SEPOLIA_CHAIN_ID) {
+            return getSepoliaNetworkConfig();
+        } else if (block.chainid == LOCAL_CHAIN_ID) {
+            return getOrCreateAnvilNetworkConfig();
+        } else {
+            revert HelperConfig__InvalidNetwork();
+        }
+    }
+
+    function getSepoliaNetworkConfig()
+        public
+        pure
+        returns (NetworkConfig memory)
+    {
+        return
+            NetworkConfig({
+                entranceFee: 0.001 ether, // 1e15
+                interval: 30, // 30 seconds,
+                vrfCoordinator: 0x9DdfaCa8183c41ad55329BdeeD9F6A8d53168B1B,
+                keyHash: 0x787d74caea10b2b357790d5b5247c2f63d1d91572a9846f780606e4d953677ae,
+                subscriptionId: 83215468507002189188918699221659824768100325101366167917951757066236385906557,
+                callbackGasLimit: 500000,
+                link: 0x779877A7B0D9E8603169DdbD7836e478b4624789,
+                account: 0xc9B610Ad7f9532D418fc0258E16d378f4b9c590e
+            });
+    }
+
+    function getOrCreateAnvilNetworkConfig()
+        public
+        returns (NetworkConfig memory)
+    {
+        if (localNetworkConfig.vrfCoordinator != address(0)) {
+            return localNetworkConfig;
+        }
+
+        vm.startBroadcast();
+        VRFCoordinatorV2_5Mock vrfCoordinatorV2_5Mock = new VRFCoordinatorV2_5Mock(
+                BASE_FEE,
+                GAS_PRICE,
+                WEI_PER_UNIT_LINK
+            );
+        LinkToken linkToken = new LinkToken();
+        vm.stopBroadcast();
+
+        localNetworkConfig = NetworkConfig({
+            entranceFee: 0.001 ether, // 1e15
+            interval: 30, // 30 seconds,
+            vrfCoordinator: address(vrfCoordinatorV2_5Mock),
+            keyHash: 0x787d74caea10b2b357790d5b5247c2f63d1d91572a9846f780606e4d953677ae,
+            subscriptionId: 0,
+            callbackGasLimit: 500000,
+            link: address(linkToken),
+            account: 0x1804c8AB1F12E6bbf3894d4083f33e07309d1f38
+        });
+        return localNetworkConfig;
+    }
+}
